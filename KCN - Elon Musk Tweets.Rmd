@@ -1,0 +1,256 @@
+---
+title: "KCN - Elon Musk Tweets"
+date: "12/10/2021"
+output: html_document
+---
+
+#Reading all libraries 
+
+```{r}
+library('tidyr')
+library('tidytext')
+library('stringr')
+library('magrittr')
+library('dplyr')
+library('sna')
+library('statnet')
+library('igraph')
+library('ggplot2')
+library('ggraph')
+```
+
+#Word frequency analysis & Bi-gram networks for Elon Musk's tweets (2017-2021)
+
+```{r}
+#Setting working directory
+getwd()
+
+d21= read.csv("2021.csv")
+dt21=data.frame(format(as.Date(d21$date), format="%Y"),d21$tweet)
+colnames(dt21)= c("Year","Tweets")
+
+#the file loaded includes tweets from 2017 to 2021
+
+#Un-nesting tweets, filtering stop words and counting occurrence of keywords according to respective years and ranking according to frequency 
+
+Words <- dt21[,c(2,1)] %>% filter(Year>2016) %>% 
+  unnest_tokens(word, Tweets) %>%
+  count(Year, word, sort = TRUE) %>% filter(!word %in% stop_words$word) %>% group_by(Year) %>% 
+  mutate(total=sum(n),frequency=n/total,rank=row_number())
+
+Years= unique(Words$Year)
+
+for (i in Years)
+{
+  nam <- paste("T", i, sep = "")
+  assign(nam,Words %>% filter(Year==i) %>% arrange(desc(frequency)))
+  
+}
+
+T2017
+T2018
+T2019
+T2020
+T2021
+
+```
+
+
+```{r}
+
+#Printing only the top 10 words for every year with their respective word frequencies 
+
+head(T2017[,c(1,2,5)],10)
+head(T2018[,c(1,2,5)],10)
+head(T2019[,c(1,2,5)],10)
+head(T2020[,c(1,2,5)],10)
+head(T2021[,c(1,2,5)],10)
+
+```
+
+```{r}
+
+#Plotting the histogram of word frequencies for each year
+
+ggplot(Words, aes(n/total, fill = Year)) +
+  geom_histogram(show.legend = FALSE, bins=100) +
+  xlim(NA, 0.03) +
+  facet_wrap(~Year, ncol = 2, scales = "free_y")
+
+```
+
+```{r}
+#Using  Zipf's law to plot log-log plots of word frequencies and ranking them for each year 
+
+ggplot(T2017,aes(rank,frequency, color = Year)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) + 
+  scale_x_log10() +
+  scale_y_log10() + theme_update(plot.title = element_text(hjust = 0.5)) + ggtitle("Log Log Plot - 2017")
+
+ggplot(T2018,aes(rank,frequency, color = Year)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) + 
+  scale_x_log10() +
+  scale_y_log10() + theme_update(plot.title = element_text(hjust = 0.5)) + ggtitle("Log Log Plot - 2018")
+
+ggplot(T2019,aes(rank,frequency, color = Year)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) + 
+  scale_x_log10() +
+  scale_y_log10() + theme_update(plot.title = element_text(hjust = 0.5)) + ggtitle("Log Log Plot - 2019")
+
+ggplot(T2020,aes(rank,frequency, color = Year)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) + 
+  scale_x_log10() +
+  scale_y_log10() + theme_update(plot.title = element_text(hjust = 0.5)) + ggtitle("Log Log Plot - 2020")
+
+ggplot(T2021,aes(rank,frequency, color = Year)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = TRUE) + 
+  scale_x_log10() +
+  scale_y_log10() + theme_update(plot.title = element_text(hjust = 0.5)) + ggtitle("Log Log Plot - 2021")
+
+
+```
+
+```{r}
+#Creating bigram network graphs for each year 
+
+#Creating bigram from tweets for the years 2017 to 2021
+
+T_bigrams <- dt21[,c(2,1)] %>% filter(Year>2016) %>% 
+  unnest_tokens(bigrams, Tweets,token = "ngrams", n = 2)
+
+#Splitting the bigram column based on white space 
+bigrams_split <- T_bigrams %>%
+  separate(bigrams, c("word1", "word2"), sep = " ")
+
+#Eliminating rows with stop words 
+tb <- bigrams_split %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)
+
+#Counting the occurrences of each bi-gram 
+cb <- na.omit(tb %>% group_by(Year)%>%
+  count(word1, word2, sort = TRUE)) 
+
+#Combining the words into bi-grams and separated by white space 
+tb <- tb %>%
+  unite(bigram, word1, word2, sep = " ")
+
+#To calculate IDF 
+tb_idf <- tb %>%
+  count(Year, bigram) %>%
+  bind_tf_idf(bigram, Year, n) %>%
+  arrange(desc(tf_idf))
+
+#Displaying the bi-gram for the year 2017
+bigram2017 <- cb %>%
+  filter(n > 2 & Year==2017)
+
+bigram_graph_2017 <- bigram2017[-1] %>% 
+  graph_from_data_frame()
+
+
+ggraph(bigram_graph_2017, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)  + ggtitle("Bi-gram - 2017")
+
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph_2017, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void() + ggtitle("Bi-gram - 2017")
+
+
+#Displaying the bi-gram for the year 2018
+bigram2018 <- cb %>%
+  filter(n>2 & Year==2018)
+
+bigram_graph_2018 <- bigram2018[-1] %>% 
+  graph_from_data_frame()
+
+
+ggraph(bigram_graph_2018, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) + ggtitle("Bi-gram - 2018")
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph_2018, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void() + ggtitle("Bi-gram - 2018")
+
+#Displaying the bi-gram for the year 2019
+bigram2019 <- cb %>%
+  filter(n>2, Year==2019)
+
+bigram_graph_2019 <- bigram2019[-1] %>% 
+  graph_from_data_frame()
+
+
+ggraph(bigram_graph_2019, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) + ggtitle("Bi-gram - 2019")
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph_2019, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void() + ggtitle("Bi-gram - 2019")
+
+#Displaying the bi-gram for the year 2020
+bigram2020 <- cb %>%
+  filter(n>2, Year==2020)
+
+bigram_graph_2020 <- bigram2020[-1] %>% 
+  graph_from_data_frame()
+
+
+ggraph(bigram_graph_2020, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) + ggtitle("Bi-gram - 2020")
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph_2020, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void() + ggtitle("Bi-gram - 2020")
+
+#Displaying the bi-gram for the year 2021
+bigram2021 <- cb %>%
+  filter(n>2, Year==2021)
+
+bigram_graph_2021 <- bigram2021[-1] %>% 
+  graph_from_data_frame()
+
+
+ggraph(bigram_graph_2021, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) + ggtitle("Bi-gram - 2021")
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph_2021, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void() + ggtitle("Bi-gram - 2021")
+
+```
